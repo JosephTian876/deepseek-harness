@@ -165,6 +165,13 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
   b.view.rerender(<WorkspaceBrowser {...b.props} />)
 }
 
+/** Visible Session row titles in render order, ignoring expanded group rows. */
+function visibleRowNames(): (string | null | undefined)[] {
+  return screen.getAllByRole('treeitem')
+    .filter(row => row.getAttribute('aria-expanded') === null)
+    .map(row => row.querySelector('[class*="title"]')?.textContent)
+}
+
 describe('WorkspaceBrowser', () => {
   it.each(['workspace', 'flat', 'ungrouped'] as const)('keeps %s recency independent of arrival order and saved manual positions', (mode) => {
     localStorage.clear()
@@ -1186,9 +1193,7 @@ describe('WorkspaceBrowser', () => {
           [sid('p'), sid('q')],
         )),
       })
-      const names = () => screen.getAllByRole('treeitem')
-        .filter(row => row.getAttribute('aria-expanded') === null)
-        .map(row => row.querySelector('[class*="title"]')?.textContent)
+      const names = visibleRowNames
       expect(names()).toEqual(['p', 'q', 'a', 'b', 'c'])
       expect(b.store.getSnapshot().sessionOrderByAccount[account]).toEqual(saved)
 
@@ -1223,6 +1228,76 @@ describe('WorkspaceBrowser', () => {
       await waitFor(() => { expect(names()).toEqual(['kept-archive', 'missing-archive']) })
     },
   )
+
+  it('leads Manual with Sessions its saved order never recorded (created in another tab or browser)', () => {
+    // The saved sequence is a stale snapshot: it predates the three fresh-*
+    // Sessions and the archived fresh-archive, exactly like a layout saved
+    // before another browser or client created them. The saved slots are
+    // deliberately not in recency order, so a recency re-sort cannot pass.
+    const saved = ['saved-newest', 'saved-oldest', 'saved-archive', 'saved-mid']
+    const preferences = createWorkspaceViewStore().create()
+    preferences.actions.setGroupExpanded('alpha', true)
+    preferences.actions.setSessionOrder('alpha', saved, {})
+    const items = [
+      summary('saved-oldest', 10), summary('saved-mid', 20), summary('saved-newest', 30),
+      summary('fresh-oldest', 40), summary('fresh-newest', 60), summary('fresh-mid', 50),
+      summary('fresh-pin', 70), summary('fresh-archive', 80), summary('saved-archive', 5),
+    ]
+    const groups = (ids: string[]) => workspaceState(
+      [workspace('alpha', ids)],
+      [sid('saved-archive'), sid('fresh-archive')],
+      [sid('fresh-pin')],
+    )
+    const b = mount({
+      useSessions: hook(sessionState(items)),
+      useWorkspaces: hook(groups(items.map(item => item.id))),
+    })
+    const names = visibleRowNames
+
+    // Unrecorded ordinary members lead by recency ahead of the saved block, so
+    // the newest rows are the first visible ones instead of trailing 244 deep.
+    expect(names()).toEqual(['fresh-pin', 'fresh-newest', 'fresh-mid', 'fresh-oldest', 'saved-newest'])
+    expect(screen.getByRole('button', { name: '展开其余 2 个会话' })).toBeTruthy()
+    // Reading the tree supplements in memory only: the saved order is untouched.
+    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(saved)
+
+    // Archived rows still follow the filter: a saved archive keeps its saved
+    // slot, and an archive the order never recorded still trails.
+    act(() => { b.store.actions.setArchivedFilter('only') })
+    expect(names()).toEqual(['saved-archive', 'fresh-archive'])
+    act(() => { b.store.actions.setArchivedFilter('default') })
+    expect(names()).toEqual(['fresh-pin', 'fresh-newest', 'fresh-mid', 'fresh-oldest', 'saved-newest'])
+
+    // A Session created elsewhere while this tab is open lands at the head of
+    // the unrecorded block without becoming pinned or persisted.
+    const live = summary('fresh-other-tab', 90)
+    rerender(b, {
+      useSessions: hook(sessionState([...items, live])),
+      useWorkspaces: hook(groups([...items.map(item => item.id), live.id])),
+    })
+    expect(names()).toEqual(['fresh-pin', 'fresh-other-tab', 'fresh-newest', 'fresh-mid', 'fresh-oldest'])
+    expect(screen.getByRole('button', { name: '展开其余 3 个会话' })).toBeTruthy()
+    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(saved)
+
+    // Expanding reveals the saved block in its saved relative order.
+    fireEvent.click(screen.getByRole('button', { name: '展开其余 3 个会话' }))
+    expect(names()).toEqual([
+      'fresh-pin', 'fresh-other-tab', 'fresh-newest', 'fresh-mid', 'fresh-oldest',
+      'saved-newest', 'saved-oldest', 'saved-mid',
+    ])
+
+    // The selected blank New Session keeps leading even though the saved
+    // sequence never recorded it either.
+    const blank = summary('blank', 1, { blank: true })
+    rerender(b, {
+      useSessions: hook(sessionState([...items, live, blank], { main: blank.id })),
+      useWorkspaces: hook(groups([...items.map(item => item.id), live.id, blank.id])),
+    })
+    expect(names()).toEqual([
+      '新会话', 'fresh-pin', 'fresh-other-tab', 'fresh-newest', 'fresh-mid', 'fresh-oldest',
+      'saved-newest', 'saved-oldest', 'saved-mid',
+    ])
+  })
 
   it('does not replace a saved flat order when the archived-only view is empty', () => {
     const preferences = createWorkspaceViewStore().create()
