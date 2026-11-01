@@ -151,14 +151,14 @@ describe('Session ordering', () => {
       .toEqual([sid('fresh-pin'), sid('stale-pin'), sid('plain')])
   })
 
-  it('reconciles retained manual slots and appends newly known members by recency', () => {
+  it('reconciles retained manual slots and leads with newly known members by recency', () => {
     const summaries = list(summary('kept', 1), summary('newer', 30), summary('older', 20)).byId
     expect(reconcileManualOrder(
       [sid('saved-without-summary'), sid('kept'), sid('newer'), sid('older'), sid('new-without-summary')],
       ['departed', 'saved-without-summary', 'kept'],
       summaries,
     )).toEqual([
-      sid('saved-without-summary'), sid('kept'), sid('newer'), sid('older'),
+      sid('newer'), sid('older'), sid('saved-without-summary'), sid('kept'),
     ])
   })
 
@@ -177,21 +177,44 @@ describe('Session ordering', () => {
     })
     const complete = reconcileManualOrder(members, saved, sessions.byId, state)
     expect(complete).toEqual([
-      'pin-b', 'pin-a', 'saved-archive', 'saved-plain', 'saved-pin', 'new-plain',
+      'pin-b', 'pin-a', 'new-plain', 'saved-archive', 'saved-plain', 'saved-pin',
       'archive-newer', 'both', 'archive-older',
     ])
     expect(reconcileManualOrder(members, complete, sessions.byId, state)).toEqual(complete)
     expect(saved).toEqual(['saved-archive', 'saved-plain', 'saved-pin'])
   })
 
-  it('appends new forks by recency while preserving saved positions', () => {
+  it('leads a stale saved order with Sessions created after it was saved', () => {
+    // A Manual sequence is a snapshot: the newer Sessions (including the
+    // pinned and archived ones) were created after this browser saved it.
+    const sessions = list(
+      summary('saved-oldest', 10), summary('saved-mid', 20), summary('saved-newest', 30),
+      summary('live-oldest', 40), summary('live-newest', 60), summary('live-mid', 50),
+      summary('new-pin', 70), summary('new-archive', 80),
+    )
+    const members = [...sessions.ids, sid('pending-summary')]
+    const saved = ['saved-newest', 'saved-oldest', 'saved-mid']
+    const state = rowState({ pinned: ['new-pin', 'saved-newest'], archived: ['new-archive'] })
+    const order = reconcileManualOrder(members, saved, sessions.byId, state)
+    expect(order).toEqual([
+      'new-pin', 'live-newest', 'live-mid', 'live-oldest',
+      'saved-newest', 'saved-oldest', 'saved-mid', 'new-archive',
+    ])
+    // The saved entries keep their relative order, the member without a
+    // summary stays out, and supplementing an already supplemented order
+    // changes nothing.
+    expect(order.slice(4, 7)).toEqual(saved)
+    expect(reconcileManualOrder(members, order, sessions.byId, state)).toEqual(order)
+  })
+
+  it('leads with new forks by recency while preserving saved positions', () => {
     const sessions = list(
       summary('source', 1), summary('other', 2),
       { ...summary('older-fork', 3), parentId: sid('source') },
       { ...summary('newer-fork', 4), parentId: sid('source') },
     )
     const order = reconcileManualOrder(sessions.ids, ['other', 'source'], sessions.byId)
-    expect(order).toEqual(['other', 'source', 'newer-fork', 'older-fork'])
+    expect(order).toEqual(['newer-fork', 'older-fork', 'other', 'source'])
     expect(reconcileManualOrder(sessions.ids, ['source', 'other', 'older-fork', 'newer-fork'], sessions.byId))
       .toEqual(['source', 'other', 'older-fork', 'newer-fork'])
   })
@@ -203,17 +226,17 @@ describe('Session ordering', () => {
       { ...summary('child', 3), parentId: sid('parent') },
     )
     expect(reconcileManualOrder(sessions.ids, ['source', 'other'], sessions.byId))
-      .toEqual(['source', 'other', 'parent', 'child'])
+      .toEqual(['parent', 'child', 'source', 'other'])
   })
 
-  it('appends forks with absent or self-referencing parents without duplicating rows', () => {
+  it('leads with forks whose parents are absent or self-referencing, without duplicating rows', () => {
     const sessions = list(
       summary('source', 1),
       { ...summary('orphan', 3), parentId: sid('absent') },
       { ...summary('self', 2), parentId: sid('self') },
     )
     expect(reconcileManualOrder(sessions.ids, ['source'], sessions.byId))
-      .toEqual(['source', 'orphan', 'self'])
+      .toEqual(['orphan', 'self', 'source'])
   })
 
   it.each(['workspace', 'ungrouped', 'flat'] as const)('keeps forks of pinned sources in the ordinary %s section', (mode) => {
@@ -229,7 +252,7 @@ describe('Session ordering', () => {
         sessions, mode === 'workspace' ? [workspace('alpha', order)] : [], state, noAttention,
         view([mode === 'workspace' ? 'alpha' : UNGROUPED_KEY], order),
       )[0]!.sessions
-    expect(rows.map(row => row.id)).toEqual(['source', 'other-pin', 'ordinary', 'fork'])
+    expect(rows.map(row => row.id)).toEqual(['source', 'other-pin', 'fork', 'ordinary'])
   })
 
   it('keeps archive filtering out of complete flat membership', () => {
@@ -297,7 +320,7 @@ describe('deriveGroups', () => {
     expect(groups[1]!.sessions.map(session => session.id)).toEqual([sid('loose')])
   })
 
-  it('applies stored Ungrouped order and appends new loose Sessions by recency', () => {
+  it('applies stored Ungrouped order and leads it with new loose Sessions by recency', () => {
     const sessions = list(summary('one', 3), summary('two', 2), summary('new', 4))
     const groups = deriveGroups(
       sessions,
@@ -307,7 +330,7 @@ describe('deriveGroups', () => {
       view([UNGROUPED_KEY], ['two', 'stale', 'two']),
     )
     expect(groups[0]!.sessions.map(session => session.id)).toEqual([
-      sid('two'), sid('new'), sid('one'),
+      sid('new'), sid('one'), sid('two'),
     ])
   })
 

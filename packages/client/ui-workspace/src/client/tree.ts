@@ -160,12 +160,13 @@ export function orderByRecency(
 
 /**
  * Reconcile a browser-local manual order with current account membership.
- * Saved entries retain their relative order; new ordinary members follow them by recency.
+ * Saved entries retain their relative order; new ordinary members lead the saved sequence by recency,
+ * so a Session this browser has not saved stays reachable instead of trailing the whole saved block.
  * @param memberIds - authoritative account membership.
  * @param savedOrder - previously saved browser-local order.
  * @param summaries - current Session metadata; unknown new members wait for their summaries.
  * @param rowState - global pin and archive membership; only account members can supplement the order.
- * @returns saved relative positions plus missing members ordered by pin, recency, and archive status.
+ * @returns missing pins, new ordinary members by recency, saved relative positions, then missing archives.
  */
 export function reconcileManualOrder(
   memberIds: readonly SessionId[],
@@ -196,7 +197,7 @@ export function reconcileManualOrder(
     if (archived.has(id)) archives.push(id)
     else ordinary.push(id)
   }
-  return [...pins, ...ordered, ...ordinary, ...archives]
+  return [...pins, ...ordinary, ...ordered, ...archives]
 }
 
 /**
@@ -299,7 +300,7 @@ function buildGroup(
   return { key, workspaceId, cwd, createdAt, label, sessions: [...members] }
 }
 
-/** Apply a stored Ungrouped order and append newly loose Sessions by recency. */
+/** Apply a stored Ungrouped order, leading it with newly loose Sessions by recency. */
 function orderedUngrouped(
   members: readonly SessionSummary[],
   stored: readonly string[] | undefined,
