@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-11-02-manual-order-new-sessions.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-02-manual-order-new-sessions.md
+/agent-note-manual-order-leads-with-sessions-it-has-not-saved:
+  en: b98e6c7b394ede19
+  zh: 15124ccb35aa5a93
+/agent-note-manual-order-leads-with-sessions-it-has-not-saved/problem:
+  en: bc46adcd48c5a0bf
+  zh: bb530dd82ee9f409
+/agent-note-manual-order-leads-with-sessions-it-has-not-saved/decision:
+  en: b45687bd1f00cf69
+  zh: 86d797f8db0c677f
+/agent-note-manual-order-leads-with-sessions-it-has-not-saved/alternatives-considered:
+  en: 9cff23757bcd9eb6
+  zh: c4aa9211d4acadc4
+/agent-note-manual-order-leads-with-sessions-it-has-not-saved/consequences:
+  en: b53c2b085fbcca19
+  zh: 92caac61b8f09828
+/agent-note-manual-order-leads-with-sessions-it-has-not-saved/testing:
+  en: 5e3b7b851ec5447d
+  zh: e173f78c90996aea
